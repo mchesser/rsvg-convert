@@ -2,5 +2,8 @@
 name = "rsvg-convert"
 version = "0.1.0"
 authors = ["Michael"]
+edition = "2018"
 
 [dependencies]
+structopt = "0.3.14"
+anyhow = "1.0.28"

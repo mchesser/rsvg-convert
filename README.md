@@ -1,7 +1,6 @@
-rsvg-convert
-====
+# rsvg-convert
 
-A tiny wrapper around Inkscape to for use with `pandoc` for automatically converting SVG files when targeting PDF outputs.
+A lightweight wrapper around Inkscape, that translates `rsvg-convert` CLI options to Inkscape options. Also caches outputs to a temporary location.
 
-Also implements caching.
+Designed for use with `pandoc` for automatically converting SVG files when targeting PDF outputs on platforms where `rsvg-convert` is difficult to install (i.e. Windows).
 
