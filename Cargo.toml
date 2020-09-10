@@ -1,9 +1,9 @@
 [package]
 name = "rsvg-convert"
-version = "0.1.0"
+version = "0.2.0"
 authors = ["Michael"]
 edition = "2018"
 
 [dependencies]
-structopt = "0.3.14"
-anyhow = "1.0.28"
+structopt = "0.3.17"
+anyhow = "1.0.32"

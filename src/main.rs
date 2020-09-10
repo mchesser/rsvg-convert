@@ -89,18 +89,18 @@ fn main() -> Result<(), anyhow::Error> {
     if !cached_file.exists() {
         eprintln!("Converting file: {:?}", opt.input);
         let mut cmd = Command::new("inkscape");
-        cmd.arg(&opt.input).arg("--without-gui");
+        cmd.arg(&opt.input);
 
         match opt.format.as_str() {
-            "png" => cmd.arg("-e"),
-            "pdf" => cmd.arg("-A"),
-            "ps" => cmd.arg("-P"),
-            "eps" => cmd.arg("-E"),
-            "wmf" => cmd.arg("-m"),
-            "emf" => cmd.arg("-M"),
+            "png" => cmd.arg("--export-type=png"),
+            "pdf" => cmd.arg("--export-type=pdf"),
+            "ps" => cmd.arg("--export-type=ps"),
+            "eps" => cmd.arg("--export-type=eps"),
+            "wmf" => cmd.arg("--export-type=wmf"),
+            "emf" => cmd.arg("--export-type=emf"),
             x => return Err(anyhow::anyhow!("Unsupported file format: {}", x)),
         };
-        cmd.arg(&cached_file);
+        cmd.arg(&format!("--export-filename={}", cached_file.display()));
 
         assert_eq!(
             opt.dpi_x, opt.dpi_y,
