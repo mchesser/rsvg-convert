@@ -1,57 +1,60 @@
 use std::{env, fs, io::Write, path::PathBuf, process::Command};
 
 use anyhow::Context;
-use structopt::StructOpt;
+use clap::Parser;
 
-#[derive(Debug, StructOpt)]
-#[structopt(name = "example", about = "An example of StructOpt usage.")]
-struct Opt {
+#[derive(Debug, clap::Parser)]
+#[command(disable_help_flag = true)]
+struct Args {
+    /// Display this message.
+    #[clap(long, action = clap::ArgAction::Help)]
+    help: Option<bool>,
+
     /// Set the X resolution of the image in pixels per inch.
-    #[structopt(short = "d", long = "dpi-x", default_value = "90")]
+    #[clap(short = 'd', long = "dpi-x", default_value = "90")]
     dpi_x: f64,
 
     /// Set the Y resolution of the image in pixels per inch.
-    #[structopt(short = "p", long = "dpi-y", default_value = "90")]
+    #[clap(short = 'p', long = "dpi-y", default_value = "90")]
     dpi_y: f64,
 
     /// X Zoom factor, as a percentage
-    #[structopt(short = "x", long = "x-zoom", default_value = "1.0")]
+    #[clap(short = 'x', long = "x-zoom", default_value = "1.0")]
     x_zoom: f64,
 
     /// Y Zoom factor, as a percentage
-    #[structopt(short = "y", long = "y-zoom", default_value = "1.0")]
+    #[clap(short = 'y', long = "y-zoom", default_value = "1.0")]
     y_zoom: f64,
 
     /// Specify how wide you wish the image to be. If unspecified, the natural width of the image
     /// is used as the default.
-    #[structopt(short, long)]
+    #[clap(short, long)]
     width: Option<u64>,
 
     /// Specify how tall you wish the image to be. If unspecified, the natural width of the image
     /// is used as the default.
-    #[structopt(short, long)]
+    #[clap(short, long)]
     height: Option<u64>,
 
     /// Specify the output format you wish the image to be saved in. If unspecified, PNG is used
     /// as the default.
-    #[structopt(short, long, default_value = "png")]
+    #[clap(short, long, default_value = "png")]
     format: String,
 
     /// Specify that the aspect ratio is to be preserved. If unspecified, aspect ratio will not be
     /// preserved.
-    #[structopt(short = "a", long = "keep-aspect-ratio")]
+    #[clap(short = 'a', long = "keep-aspect-ratio")]
     keep_aspect_ratio: bool,
 
-    /// Input file
-    #[structopt(parse(from_os_str))]
-    input: PathBuf,
+    /// Input file, stdin if not present.
+    input: Option<PathBuf>,
 
-    /// Output file, stdout if not present
-    #[structopt(long, short, parse(from_os_str))]
+    /// Output file, stdout if not present.
+    #[clap(long, short)]
     output: Option<PathBuf>,
 }
 
-fn hash_input(opt: &Opt) -> String {
+fn hash_input(opt: &Args) -> Option<String> {
     use std::collections::hash_map::DefaultHasher;
     use std::hash::{Hash, Hasher};
 
@@ -65,15 +68,18 @@ fn hash_input(opt: &Opt) -> String {
     opt.format.hash(&mut hasher);
     opt.keep_aspect_ratio.hash(&mut hasher);
 
+    // Note: If the input is from `stdin` then never use a cached image.
     // TODO: consider hashing the contents of the file instead of the filename, however this is not
     // a huge issue since pandoc already does this.
-    opt.input.file_name().hash(&mut hasher);
+    let path = opt.input.as_ref()?;
+    path.hash(&mut hasher);
 
-    format!("{:0x}", hasher.finish())
+    Some(format!("{:0x}", hasher.finish()))
 }
 
-fn main() -> Result<(), anyhow::Error> {
-    let opt = Opt::from_args();
+fn main() -> anyhow::Result<()> {
+    eprintln!("{}", std::env::args().collect::<Vec<String>>().join(" "));
+    let opt = Args::parse();
 
     let mut cache_dir = env::temp_dir();
     cache_dir.push("rsvg-convert-cache");
@@ -82,15 +88,28 @@ fn main() -> Result<(), anyhow::Error> {
         fs::create_dir(&cache_dir).context("failed to create temporary directory")?;
     }
 
-    let mut cached_file = cache_dir;
-    cached_file.push(hash_input(&opt));
-    cached_file.set_extension(&opt.format);
+    let (output_path, exists) = match hash_input(&opt) {
+        Some(hash) => {
+            let path = cache_dir.join(hash).with_extension(&opt.format);
+            let exists = path.exists();
+            (path, exists)
+        }
+        None => (cache_dir.join("from_stdin").with_extension(&opt.format), false),
+    };
 
-    if !cached_file.exists() {
-        eprintln!("Converting file: {:?}", opt.input);
+    if !exists {
         let mut cmd = Command::new("inkscape");
-        cmd.arg(&opt.input);
-
+        match opt.input {
+            Some(input) => {
+                eprintln!("Reading input from: {}", input.display());
+                cmd.arg(input);
+            }
+            None => {
+                eprintln!("Reading input from STDIN");
+                cmd.arg("--pipe");
+                cmd.stdin(std::process::Stdio::inherit());
+            }
+        }
         match opt.format.as_str() {
             "png" => cmd.arg("--export-type=png"),
             "pdf" => cmd.arg("--export-type=pdf"),
@@ -100,7 +119,7 @@ fn main() -> Result<(), anyhow::Error> {
             "emf" => cmd.arg("--export-type=emf"),
             x => return Err(anyhow::anyhow!("Unsupported file format: {}", x)),
         };
-        cmd.arg(&format!("--export-filename={}", cached_file.display()));
+        cmd.arg(&format!("--export-filename={}", output_path.display()));
 
         assert_eq!(
             opt.dpi_x, opt.dpi_y,
@@ -128,14 +147,15 @@ fn main() -> Result<(), anyhow::Error> {
         let _ = std::io::stderr().write_all(&output.stderr);
     }
     else {
-        eprintln!("Loading from cache: {:?}", cached_file);
+        eprintln!("Loading from cache: {}", output_path.display());
     }
 
     if let Some(output) = opt.output {
-        fs::copy(cached_file, output).context("Failed to copy output to destination")?;
+        fs::copy(output_path, output).context("Failed to copy output to destination")?;
     }
     else {
-        let mut data = std::fs::File::open(cached_file).context("No output was generated")?;
+        let mut data = std::fs::File::open(&output_path)
+            .with_context(|| format!("No output was generated: {}", output_path.display()))?;
         std::io::copy(&mut data, &mut std::io::stdout().lock())
             .context("Failed to write output to stdout")?;
     }
