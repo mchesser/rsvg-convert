@@ -46,6 +46,10 @@ struct Args {
     #[clap(short = 'a', long = "keep-aspect-ratio")]
     keep_aspect_ratio: bool,
 
+    /// Disable output cache.
+    #[clap(long = "no-cache")]
+    disable_cache: bool,
+
     /// Input file, stdin if not present.
     input: Option<PathBuf>,
 
@@ -78,7 +82,6 @@ fn hash_input(opt: &Args) -> Option<String> {
 }
 
 fn main() -> anyhow::Result<()> {
-    eprintln!("{}", std::env::args().collect::<Vec<String>>().join(" "));
     let opt = Args::parse();
 
     let mut cache_dir = env::temp_dir();
@@ -97,7 +100,7 @@ fn main() -> anyhow::Result<()> {
         None => (cache_dir.join("from_stdin").with_extension(&opt.format), false),
     };
 
-    if !exists {
+    if !exists || opt.disable_cache {
         let mut cmd = Command::new("inkscape");
         match opt.input {
             Some(input) => {
@@ -117,7 +120,7 @@ fn main() -> anyhow::Result<()> {
             "eps" => cmd.arg("--export-type=eps"),
             "wmf" => cmd.arg("--export-type=wmf"),
             "emf" => cmd.arg("--export-type=emf"),
-            x => return Err(anyhow::anyhow!("Unsupported file format: {}", x)),
+            x => return Err(anyhow::format_err!("Unsupported file format: {x}")),
         };
         cmd.arg(&format!("--export-filename={}", output_path.display()));
 
@@ -140,7 +143,7 @@ fn main() -> anyhow::Result<()> {
 
         if !output.status.success() {
             let error = String::from_utf8_lossy(&output.stderr);
-            return Err(anyhow::anyhow!("Inkscape error:\n{}", error));
+            return Err(anyhow::format_err!("Inkscape error:\n{error}"));
         }
 
         let _ = std::io::stdout().write_all(&output.stdout);
